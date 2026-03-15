@@ -28,7 +28,3 @@ This project proposes an ML-based Internet Quality Predictor that analyzes param
 🎥 Watch the demo:  
 https://drive.google.com/file/d/17VAsICGwY2jkTneJQ4jT3Nsk6xmjoC3V/view?usp=sharing
 
-## Demo Video
-
-Watch the project demo here:  
-https://drive.google.com/file/d/17VAsICGwY2jkTneJQ4jT3Nsk6xmjoC3V/view?usp=sharing
