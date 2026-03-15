@@ -21,8 +21,8 @@ This project proposes an ML-based Internet Quality Predictor that analyzes param
 - HTML + Vannila JS (FrontEnd)
 - Node.js (Website Server)
 
-![Demo Image](demo/Screenshot 2026-03-14 153934.png)
-![Demo Image](demo/Screenshot 2026-03-14 155443.png)
+![Demo Image](demo/demo0.png)
+![Demo Image](demo/demo1.png)
 
 ## Demo Video
 
