@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="en" class="h-full">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WiFi Signal Predictor</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.263.0/dist/umd/lucide.min.js"></script>
+  <script src="/_sdk/element_sdk.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: 'DM Sans', sans-serif; margin: 0; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(18px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(56, 239, 125, 0.25); }
+      50% { box-shadow: 0 0 20px 4px rgba(56, 239, 125, 0.15); }
+    }
+    @keyframes scanLine {
+      0% { transform: translateY(-100%); }
+      100% { transform: translateY(400%); }
+    }
+    .fade-up { animation: fadeUp 0.5s ease forwards; opacity: 0; }
+    .pulse-glow { animation: pulseGlow 2.5s ease-in-out infinite; }
+    .scan-line {
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, rgba(56,239,125,0.5), transparent);
+      animation: scanLine 3s linear infinite;
+    }
+
+    .signal-bar { transition: height 0.4s ease, background 0.4s ease; }
+    .network-card { transition: all 0.25s ease; }
+    .network-card:hover { transform: translateY(-2px); }
+    .confidence-fill { transition: width 0.8s cubic-bezier(0.22,1,0.36,1); }
+    .tab-btn { transition: all 0.2s ease; }
+    .toast-msg {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      padding: 12px 24px; border-radius: 12px; z-index: 100;
+      animation: fadeUp 0.3s ease forwards;
+    }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+  </style>
+  <style>body { box-sizing: border-box; }</style>
+  <script src="/_sdk/data_sdk.js" type="text/javascript"></script>
+ </head>
+ <body class="h-full">
+  <div id="app-wrapper" class="h-full w-full overflow-auto" style="background: #0a0e1a;"><!-- Header -->
+   <header class="relative px-6 pt-6 pb-4" style="border-bottom: 1px solid rgba(255,255,255,0.06);">
+    <div class="scan-line"></div>
+    <div class="max-w-6xl mx-auto flex items-center justify-between">
+     <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background: linear-gradient(135deg, #38ef7d, #11998e);"><i data-lucide="wifi" style="width:20px;height:20px;color:#0a0e1a;"></i>
+      </div>
+      <div>
+       <h1 id="app-title" class="text-lg font-bold" style="color:#e8ecf1;">WiFi Signal Predictor</h1>
+       <p id="subtitle-text" class="text-xs" style="color:#5a6a80;">Intelligent Network Analysis</p>
+      </div>
+     </div>
+     <div class="flex items-center gap-3"><button id="scan-btn" class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold" style="background:linear-gradient(135deg,#38ef7d,#11998e);color:#0a0e1a;" onclick="runScan()"> <i data-lucide="radar" style="width:16px;height:16px;"></i> <span>Scan Networks</span> </button> <button id="json-upload-btn" class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium" style="background:rgba(255,255,255,0.06);color:#8a9ab5;border:1px solid rgba(255,255,255,0.08);" onclick="document.getElementById('json-input').click()"> <i data-lucide="upload" style="width:15px;height:15px;"></i> <span>Load JSON</span> </button> <input type="file" id="json-input" accept=".json" style="display:none;" onchange="handleFileUpload(event)">
+     </div>
+    </div>
+   </header>
+   <main class="max-w-6xl mx-auto px-6 py-6"><!-- Tabs -->
+    <nav class="flex gap-1 p-1 rounded-xl mb-6" style="background:rgba(255,255,255,0.04);width:fit-content;" role="tablist" aria-label="Dashboard views"><button class="tab-btn px-5 py-2 rounded-lg text-sm font-medium" style="background:rgba(56,239,125,0.12);color:#38ef7d;" onclick="switchTab('dashboard')" id="tab-dashboard" role="tab" aria-selected="true">Dashboard</button> <button class="tab-btn px-5 py-2 rounded-lg text-sm font-medium" style="color:#5a6a80;" onclick="switchTab('predictor')" id="tab-predictor" role="tab" aria-selected="false">Predictor Analysis</button> <button class="tab-btn px-5 py-2 rounded-lg text-sm font-medium" style="color:#5a6a80;" onclick="switchTab('history')" id="tab-history" role="tab" aria-selected="false">History</button>
+    </nav><!-- ====== DASHBOARD TAB ====== -->
+    <section id="view-dashboard"><!-- Summary Cards -->
+     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6" id="summary-cards">
+      <div class="rounded-xl p-4 fade-up" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);animation-delay:0.05s;">
+       <div class="flex items-center gap-2 mb-2">
+        <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background:rgba(56,239,125,0.12);">
+         <i data-lucide="wifi" style="width:16px;height:16px;color:#38ef7d;"></i>
+        </div><span class="text-xs font-medium" style="color:#5a6a80;">Networks Found</span>
+       </div>
+       <p class="text-2xl font-bold mono" style="color:#e8ecf1;" id="stat-total">0</p>
+      </div>
+      <div class="rounded-xl p-4 fade-up" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);animation-delay:0.12s;">
+       <div class="flex items-center gap-2 mb-2">
+        <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background:rgba(99,179,237,0.12);">
+         <i data-lucide="signal" style="width:16px;height:16px;color:#63b3ed;"></i>
+        </div><span class="text-xs font-medium" style="color:#5a6a80;">Strongest Signal</span>
+       </div>
+       <p class="text-2xl font-bold mono" style="color:#e8ecf1;" id="stat-strongest">—</p>
+      </div>
+      <div class="rounded-xl p-4 fade-up" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);animation-delay:0.19s;">
+       <div class="flex items-center gap-2 mb-2">
+        <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background:rgba(237,187,56,0.12);">
+         <i data-lucide="bar-chart-3" style="width:16px;height:16px;color:#edbb38;"></i>
+        </div><span class="text-xs font-medium" style="color:#5a6a80;">Avg Confidence</span>
+       </div>
+       <p class="text-2xl font-bold mono" style="color:#e8ecf1;" id="stat-avg-conf">0%</p>
+      </div>
+      <div class="rounded-xl p-4 pulse-glow fade-up" style="background:linear-gradient(135deg,rgba(56,239,125,0.08),rgba(17,153,142,0.08));border:1px solid rgba(56,239,125,0.15);animation-delay:0.26s;">
+       <div class="flex items-center gap-2 mb-2">
+        <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background:rgba(56,239,125,0.18);">
+         <i data-lucide="zap" style="width:16px;height:16px;color:#38ef7d;"></i>
+        </div><span class="text-xs font-medium" id="recommendation-label" style="color:#38ef7d;">Best Connection</span>
+       </div>
+       <p class="text-lg font-bold mono truncate" style="color:#38ef7d;" id="stat-best">Scan to find</p>
+      </div>
+     </div><!-- Network List + Strength Visualization -->
+     <div class="grid grid-cols-1 lg:grid-cols-3 gap-5"><!-- Network List -->
+      <div class="lg:col-span-2 rounded-xl p-5" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">
+       <div class="flex items-center justify-between mb-4">
+        <h2 class="text-sm font-semibold" style="color:#e8ecf1;">Available Networks</h2><span class="text-xs mono px-2 py-1 rounded-md" style="background:rgba(255,255,255,0.05);color:#5a6a80;" id="network-count-badge">0 networks</span>
+       </div>
+       <div id="network-list" class="space-y-2 max-h-96 overflow-auto pr-1">
+        <div class="flex flex-col items-center justify-center py-12" style="color:#3a4a60;"><i data-lucide="wifi-off" style="width:40px;height:40px;margin-bottom:12px;opacity:0.4;"></i>
+         <p class="text-sm">No networks detected</p>
+         <p class="text-xs mt-1" style="color:#2a3a50;">Click "Scan Networks" or load a JSON file</p>
+        </div>
+       </div>
+      </div><!-- Strength Distribution -->
+      <div class="rounded-xl p-5" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">
+       <h2 class="text-sm font-semibold mb-4" style="color:#e8ecf1;">Signal Distribution</h2>
+       <div id="class-distribution" class="flex items-end justify-between gap-3" style="height:180px;">
+        <div class="flex flex-col items-center flex-1" style="height:100%;">
+         <div class="flex-1 w-full flex items-end">
+          <div class="signal-bar w-full rounded-t-md" style="height:0%;background:#ef4444;"></div>
+         </div><span class="text-xs mt-2 mono" style="color:#5a6a80;">C0</span>
+        </div>
+        <div class="flex flex-col items-center flex-1" style="height:100%;">
+         <div class="flex-1 w-full flex items-end">
+          <div class="signal-bar w-full rounded-t-md" style="height:0%;background:#f59e0b;"></div>
+         </div><span class="text-xs mt-2 mono" style="color:#5a6a80;">C1</span>
+        </div>
+        <div class="flex flex-col items-center flex-1" style="height:100%;">
+         <div class="flex-1 w-full flex items-end">
+          <div class="signal-bar w-full rounded-t-md" style="height:0%;background:#3b82f6;"></div>
+         </div><span class="text-xs mt-2 mono" style="color:#5a6a80;">C2</span>
+        </div>
+        <div class="flex flex-col items-center flex-1" style="height:100%;">
+         <div class="flex-1 w-full flex items-end">
+          <div class="signal-bar w-full rounded-t-md" style="height:0%;background:#8b5cf6;"></div>
+         </div><span class="text-xs mt-2 mono" style="color:#5a6a80;">C3</span>
+        </div>
+        <div class="flex flex-col items-center flex-1" style="height:100%;">
+         <div class="flex-1 w-full flex items-end">
+          <div class="signal-bar w-full rounded-t-md" style="height:0%;background:#38ef7d;"></div>
+         </div><span class="text-xs mt-2 mono" style="color:#5a6a80;">C4</span>
+        </div>
+       </div>
+       <div class="mt-4 pt-4" style="border-top:1px solid rgba(255,255,255,0.06);">
+        <div class="flex items-center justify-between text-xs" style="color:#5a6a80;"><span>Class 0: Very Weak</span><span>Class 4: Excellent</span>
+        </div>
+       </div>
+      </div>
+     </div>
+    </section><!-- ====== PREDICTOR TAB ====== -->
+    <section id="view-predictor" style="display:none;">
+     <div class="grid grid-cols-1 lg:grid-cols-2 gap-5"><!-- Prediction Input -->
+      <div class="rounded-xl p-5" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">
+       <h2 class="text-sm font-semibold mb-4" style="color:#e8ecf1;"><i data-lucide="cpu" style="width:15px;height:15px;display:inline;vertical-align:-2px;margin-right:6px;color:#38ef7d;"></i> Prediction Engine</h2>
+       <p class="text-xs mb-5" style="color:#5a6a80;">Paste your API JSON response below or use the loaded data to run prediction analysis.</p>
+       <form onsubmit="event.preventDefault(); runPrediction();"><label for="json-textarea" class="text-xs font-medium mb-2 block" style="color:#8a9ab5;">JSON Data Input</label> <textarea id="json-textarea" rows="10" class="w-full rounded-lg p-3 text-sm mono" style="background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.08);color:#c8d6e5;resize:vertical;" placeholder="{&quot;networks&quot;:[{&quot;ssid&quot;:&quot;MyWiFi&quot;,&quot;strength_class&quot;:4,&quot;confidence&quot;:0.95}]}"></textarea>
+        <div class="flex gap-2 mt-4"><button type="submit" class="flex-1 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-2" style="background:linear-gradient(135deg,#38ef7d,#11998e);color:#0a0e1a;"> <i data-lucide="play" style="width:15px;height:15px;"></i> Run Analysis </button> <button type="button" onclick="loadSampleData()" class="px-4 py-2.5 rounded-lg text-sm font-medium" style="background:rgba(255,255,255,0.06);color:#8a9ab5;border:1px solid rgba(255,255,255,0.08);"> Sample Data </button>
+        </div>
+       </form>
+      </div><!-- Prediction Results -->
+      <div class="rounded-xl p-5" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">
+       <h2 class="text-sm font-semibold mb-4" style="color:#e8ecf1;"><i data-lucide="target" style="width:15px;height:15px;display:inline;vertical-align:-2px;margin-right:6px;color:#38ef7d;"></i> Prediction Results</h2>
+       <div id="prediction-results">
+        <div class="flex flex-col items-center justify-center py-16" style="color:#3a4a60;"><i data-lucide="brain" style="width:40px;height:40px;margin-bottom:12px;opacity:0.4;"></i>
+         <p class="text-sm">Awaiting analysis</p>
+         <p class="text-xs mt-1" style="color:#2a3a50;">Paste JSON and run prediction</p>
+        </div>
+       </div>
+      </div>
+     </div><!-- Confidence Matrix -->
+     <div class="rounded-xl p-5 mt-5" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">
+      <h2 class="text-sm font-semibold mb-4" style="color:#e8ecf1;"><i data-lucide="grid-3x3" style="width:15px;height:15px;display:inline;vertical-align:-2px;margin-right:6px;color:#38ef7d;"></i> Confidence Matrix</h2>
+      <div id="confidence-matrix" class="overflow-x-auto">
+       <p class="text-xs text-center py-8" style="color:#3a4a60;">Run analysis to generate confidence matrix</p>
+      </div>
+     </div>
+    </section><!-- ====== HISTORY TAB ====== -->
+    <section id="view-history" style="display:none;">
+     <div class="rounded-xl p-5" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">
+      <div class="flex items-center justify-between mb-4">
+       <h2 class="text-sm font-semibold" style="color:#e8ecf1;"><i data-lucide="history" style="width:15px;height:15px;display:inline;vertical-align:-2px;margin-right:6px;color:#38ef7d;"></i> Scan History</h2><button onclick="clearHistory()" class="text-xs px-3 py-1.5 rounded-md" style="background:rgba(239,68,68,0.1);color:#ef4444;">Clear All</button>
+      </div>
+      <div id="history-list">
+       <div class="flex flex-col items-center justify-center py-12" style="color:#3a4a60;"><i data-lucide="clock" style="width:40px;height:40px;margin-bottom:12px;opacity:0.4;"></i>
+        <p class="text-sm">No scan history yet</p>
+       </div>
+      </div>
+     </div>
+    </section>
+   </main>
+  </div>
+  <script>
+    // ===== STATE =====
+    let currentData = null;
+    let scanHistory = [];
+    let currentTab = 'dashboard';
+
+    const defaultConfig = {
+      background_color: '#0a0e1a',
+      surface_color: 'rgba(255,255,255,0.04)',
+      text_color: '#e8ecf1',
+      primary_action_color: '#38ef7d',
+      secondary_action_color: '#8a9ab5',
+      font_family: 'DM Sans',
+      font_size: 14,
+      app_title: 'WiFi Signal Predictor',
+      subtitle_text: 'Intelligent Network Analysis',
+      recommendation_label: 'Best Connection'
+    };
+
+    const classColors = ['#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6', '#38ef7d'];
+    const classLabels = ['Very Weak', 'Weak', 'Moderate', 'Strong', 'Excellent'];
+
+    // ===== SAMPLE DATA =====
+    const sampleNetworks = [
+      { ssid: "HomeNet_5G", strength_class: 4, confidence: 0.96, bssid: "AA:BB:CC:01" },
+      { ssid: "Office_WiFi", strength_class: 3, confidence: 0.88, bssid: "AA:BB:CC:02" },
+      { ssid: "CafeConnect", strength_class: 2, confidence: 0.72, bssid: "AA:BB:CC:03" },
+      { ssid: "Neighbor_Net", strength_class: 1, confidence: 0.61, bssid: "AA:BB:CC:04" },
+      { ssid: "PublicWiFi", strength_class: 0, confidence: 0.45, bssid: "AA:BB:CC:05" },
+      { ssid: "SmartHome_Hub", strength_class: 4, confidence: 0.93, bssid: "AA:BB:CC:06" },
+      { ssid: "GuestNetwork", strength_class: 2, confidence: 0.68, bssid: "AA:BB:CC:07" },
+      { ssid: "MobileHotspot", strength_class: 3, confidence: 0.82, bssid: "AA:BB:CC:08" }
+    ];
+
+    // ===== ELEMENT SDK =====
+    window.elementSdk.init({
+      defaultConfig,
+      onConfigChange: async (config) => {
+        const c = { ...defaultConfig, ...config };
+        const font = c.font_family || defaultConfig.font_family;
+        const baseFont = 'sans-serif';
+        const fontStack = `${font}, ${baseFont}`;
+        const sz = c.font_size || defaultConfig.font_size;
+
+        document.getElementById('app-wrapper').style.background = c.background_color;
+        document.getElementById('app-title').textContent = c.app_title || defaultConfig.app_title;
+        document.getElementById('app-title').style.fontFamily = fontStack;
+        document.getElementById('app-title').style.fontSize = `${sz * 1.3}px`;
+        document.getElementById('subtitle-text').textContent = c.subtitle_text || defaultConfig.subtitle_text;
+        document.getElementById('subtitle-text').style.fontFamily = fontStack;
+        document.getElementById('subtitle-text').style.color = c.secondary_action_color;
+        document.getElementById('subtitle-text').style.fontSize = `${sz * 0.85}px`;
+        document.getElementById('recommendation-label').textContent = c.recommendation_label || defaultConfig.recommendation_label;
+        document.getElementById('recommendation-label').style.color = c.primary_action_color;
+
+        document.querySelectorAll('h1,h2,p,span,button,label,textarea').forEach(el => {
+          el.style.fontFamily = fontStack;
+        });
+        document.querySelectorAll('.network-card').forEach(card => {
+          card.style.background = c.surface_color;
+        });
+      },
+      mapToCapabilities: (config) => ({
+        recolorables: [
+          { get: () => config.background_color || defaultConfig.background_color, set: (v) => { config.background_color = v; window.elementSdk.setConfig({ background_color: v }); } },
+          { get: () => config.surface_color || defaultConfig.surface_color, set: (v) => { config.surface_color = v; window.elementSdk.setConfig({ surface_color: v }); } },
+          { get: () => config.text_color || defaultConfig.text_color, set: (v) => { config.text_color = v; window.elementSdk.setConfig({ text_color: v }); } },
+          { get: () => config.primary_action_color || defaultConfig.primary_action_color, set: (v) => { config.primary_action_color = v; window.elementSdk.setConfig({ primary_action_color: v }); } },
+          { get: () => config.secondary_action_color || defaultConfig.secondary_action_color, set: (v) => { config.secondary_action_color = v; window.elementSdk.setConfig({ secondary_action_color: v }); } }
+        ],
+        borderables: [],
+        fontEditable: {
+          get: () => config.font_family || defaultConfig.font_family,
+          set: (v) => { config.font_family = v; window.elementSdk.setConfig({ font_family: v }); }
+        },
+        fontSizeable: {
+          get: () => config.font_size || defaultConfig.font_size,
+          set: (v) => { config.font_size = v; window.elementSdk.setConfig({ font_size: v }); }
+        }
+      }),
+      mapToEditPanelValues: (config) => new Map([
+        ['app_title', config.app_title || defaultConfig.app_title],
+        ['subtitle_text', config.subtitle_text || defaultConfig.subtitle_text],
+        ['recommendation_label', config.recommendation_label || defaultConfig.recommendation_label]
+      ])
+    });
+
+    // ===== TABS =====
+    function switchTab(tab) {
+      currentTab = tab;
+      ['dashboard', 'predictor', 'history'].forEach(t => {
+        document.getElementById(`view-${t}`).style.display = t === tab ? 'block' : 'none';
+        const btn = document.getElementById(`tab-${t}`);
+        if (t === tab) {
+          btn.style.background = 'rgba(56,239,125,0.12)';
+          btn.style.color = '#38ef7d';
+          btn.setAttribute('aria-selected', 'true');
+        } else {
+          btn.style.background = 'transparent';
+          btn.style.color = '#5a6a80';
+          btn.setAttribute('aria-selected', 'false');
+        }
+      });
+      lucide.createIcons();
+    }
+
+    // ===== SCANNING (integrated with Python APIs via Node) =====
+    async function runScan() {
+      const btn = document.getElementById('scan-btn');
+      btn.innerHTML = '<i data-lucide="loader" style="width:16px;height:16px;" class="animate-spin"></i><span>Scanning...</span>';
+      btn.disabled = true;
+      lucide.createIcons();
+
+      try {
+        const resp = await fetch('/api/scan-and-predict');
+        if (!resp.ok) {
+          throw new Error('Scan failed');
+        }
+        const data = await resp.json();
+        console.log('Frontend /api/scan-and-predict JSON:', data);
+        if (!data.networks || !Array.isArray(data.networks)) {
+          throw new Error('Invalid data from backend');
+        }
+
+        currentData = { networks: data.networks };
+        renderDashboard(currentData);
+        addToHistory(currentData);
+
+        showToast('Scan complete — ' + data.networks.length + ' networks found', 'success');
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to scan networks. Ensure Python API is running on 127.0.0.1:5000.', 'error');
+      } finally {
+        btn.innerHTML = '<i data-lucide="radar" style="width:16px;height:16px;"></i><span>Scan Networks</span>';
+        btn.disabled = false;
+        lucide.createIcons();
+      }
+    }
+
+    // ===== FILE UPLOAD =====
+    function handleFileUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(ev) {
+        try {
+          const data = JSON.parse(ev.target.result);
+          if (!data.networks || !Array.isArray(data.networks)) {
+            showToast('Invalid JSON: must contain a "networks" array', 'error');
+            return;
+          }
+          currentData = data;
+          renderDashboard(data);
+          addToHistory(data);
+          document.getElementById('json-textarea').value = JSON.stringify(data, null, 2);
+          showToast('JSON loaded — ' + data.networks.length + ' networks', 'success');
+        } catch (err) {
+          showToast('Failed to parse JSON file', 'error');
+        }
+      };
+      reader.readAsText(file);
+      e.target.value = '';
+    }
+
+    // ===== DASHBOARD RENDER =====
+    function renderDashboard(data) {
+      const networks = data.networks.sort((a, b) => b.strength_class - a.strength_class || b.confidence - a.confidence);
+
+      // Stats
+      document.getElementById('stat-total').textContent = networks.length;
+      const best = networks[0];
+      document.getElementById('stat-best').textContent = best ? best.ssid : '—';
+      document.getElementById('stat-strongest').textContent = best ? `Class ${best.strength_class}` : '—';
+      const avgConf = networks.length ? (networks.reduce((s, n) => s + n.confidence, 0) / networks.length * 100).toFixed(1) : 0;
+      document.getElementById('stat-avg-conf').textContent = avgConf + '%';
+
+      // Network list
+      const list = document.getElementById('network-list');
+      list.innerHTML = '';
+      document.getElementById('network-count-badge').textContent = networks.length + ' networks';
+
+      networks.forEach((net, i) => {
+        const isConnected = i === 0;
+        const card = document.createElement('div');
+        card.className = 'network-card rounded-lg p-3 cursor-pointer';
+        card.style.cssText = `background:rgba(255,255,255,0.03);border:1px solid ${isConnected ? 'rgba(56,239,125,0.2)' : 'rgba(255,255,255,0.05)'};animation:fadeUp 0.4s ease ${i * 0.06}s forwards;opacity:0;`;
+
+        const confPct = (net.confidence * 100).toFixed(1);
+        card.innerHTML = `
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="flex items-end gap-0.5" style="height:20px;">
+                ${[0,1,2,3].map(bar => `<div style="width:3px;height:${(bar+1)*5}px;border-radius:1px;background:${bar <= net.strength_class ? classColors[net.strength_class] : 'rgba(255,255,255,0.1)'};"></div>`).join('')}
+              </div>
+              <div>
+                <p class="text-sm font-medium" style="color:#e8ecf1;">${net.ssid}</p>
+                <p class="text-xs mono" style="color:#5a6a80;">${net.bssid || '—'}</p>
+              </div>
+            </div>
+            <div class="text-right flex items-center gap-3">
+              <div>
+                <span class="text-xs font-semibold px-2 py-0.5 rounded-full" style="background:${classColors[net.strength_class]}20;color:${classColors[net.strength_class]};">Class ${net.strength_class}</span>
+                <p class="text-xs mono mt-1" style="color:#5a6a80;">${confPct}% conf</p>
+              </div>
+              ${isConnected ? '<span class="text-xs font-semibold px-2 py-1 rounded-md" style="background:rgba(56,239,125,0.15);color:#38ef7d;">● BEST</span>' : ''}
+            </div>
+          </div>
+          <div class="mt-2 rounded-full overflow-hidden" style="height:3px;background:rgba(255,255,255,0.06);">
+            <div class="confidence-fill h-full rounded-full" style="width:${confPct}%;background:${classColors[net.strength_class]};"></div>
+          </div>
+        `;
+        list.appendChild(card);
+      });
+
+      // Distribution bars
+      const classCounts = [0, 0, 0, 0, 0];
+      networks.forEach(n => classCounts[n.strength_class]++);
+      const maxCount = Math.max(...classCounts, 1);
+      const bars = document.querySelectorAll('#class-distribution .signal-bar');
+      bars.forEach((bar, i) => {
+        setTimeout(() => {
+          bar.style.height = (classCounts[i] / maxCount * 100) + '%';
+          bar.style.background = classColors[i];
+        }, 100 + i * 80);
+      });
+    }
+
+    // ===== PREDICTOR =====
+    function loadSampleData() {
+      const data = { networks: sampleNetworks };
+      document.getElementById('json-textarea').value = JSON.stringify(data, null, 2);
+      showToast('Sample data loaded into editor', 'success');
+    }
+
+    function runPrediction() {
+      const raw = document.getElementById('json-textarea').value.trim();
+      if (!raw) {
+        showToast('Please enter JSON data first', 'error');
+        return;
+      }
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        showToast('Invalid JSON format', 'error');
+        return;
+      }
+      if (!data.networks || !Array.isArray(data.networks)) {
+        showToast('JSON must contain a "networks" array', 'error');
+        return;
+      }
+
+      currentData = data;
+      renderDashboard(data);
+      addToHistory(data);
+      renderPredictionResults(data);
+      showToast('Analysis complete!', 'success');
+    }
+
+    function renderPredictionResults(data) {
+      const container = document.getElementById('prediction-results');
+      const sorted = [...data.networks].sort((a, b) => b.strength_class - a.strength_class || b.confidence - a.confidence);
+      const best = sorted[0];
+
+      if (!best) {
+        container.innerHTML = '<p class="text-sm text-center py-8" style="color:#3a4a60;">No networks to analyze</p>';
+        return;
+      }
+
+      let html = `
+        <div class="rounded-lg p-4 mb-4" style="background:linear-gradient(135deg,rgba(56,239,125,0.08),rgba(17,153,142,0.08));border:1px solid rgba(56,239,125,0.15);">
+          <p class="text-xs font-medium mb-1" style="color:#38ef7d;">⚡ Recommended Connection</p>
+          <p class="text-lg font-bold mono" style="color:#e8ecf1;">${best.ssid}</p>
+          <div class="flex gap-4 mt-2">
+            <span class="text-xs mono" style="color:#38ef7d;">Class ${best.strength_class} — ${classLabels[best.strength_class]}</span>
+            <span class="text-xs mono" style="color:#8a9ab5;">Confidence: ${(best.confidence * 100).toFixed(1)}%</span>
+          </div>
+        </div>
+        <div class="space-y-2">
+          <p class="text-xs font-semibold mb-2" style="color:#8a9ab5;">Ranked Network Predictions</p>
+      `;
+
+      sorted.forEach((net, i) => {
+        const score = (net.strength_class * 0.6 + net.confidence * 0.4) * 25;
+        html += `
+          <div class="flex items-center gap-3 rounded-lg p-2.5" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.04);">
+            <span class="text-xs mono font-bold w-6 text-center" style="color:${classColors[net.strength_class]};">#${i + 1}</span>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium truncate" style="color:#e8ecf1;">${net.ssid}</p>
+              <div class="flex gap-2 mt-1">
+                <span class="text-xs px-1.5 py-0.5 rounded" style="background:${classColors[net.strength_class]}18;color:${classColors[net.strength_class]};">C${net.strength_class}</span>
+                <span class="text-xs mono" style="color:#5a6a80;">${(net.confidence * 100).toFixed(1)}%</span>
+              </div>
+            </div>
+            <div class="w-16 text-right">
+              <p class="text-sm font-bold mono" style="color:${classColors[net.strength_class]};">${score.toFixed(0)}</p>
+              <p class="text-xs" style="color:#5a6a80;">score</p>
+            </div>
+          </div>
+        `;
+      });
+
+      html += '</div>';
+      container.innerHTML = html;
+
+      // Confidence Matrix
+      renderConfidenceMatrix(data);
+    }
+
+    function renderConfidenceMatrix(data) {
+      const container = document.getElementById('confidence-matrix');
+      const networks = data.networks;
+
+      let html = '<table class="w-full text-xs mono" style="border-collapse:separate;border-spacing:2px;">';
+      html += '<thead><tr><th class="text-left p-2 rounded-md" style="background:rgba(255,255,255,0.04);color:#8a9ab5;">Network</th>';
+      for (let c = 0; c <= 4; c++) {
+        html += `<th class="p-2 rounded-md text-center" style="background:rgba(255,255,255,0.04);color:${classColors[c]};">C${c}</th>`;
+      }
+      html += '<th class="p-2 rounded-md text-center" style="background:rgba(255,255,255,0.04);color:#38ef7d;">Pred</th></tr></thead><tbody>';
+
+      networks.forEach(net => {
+        // Simulate class probabilities centered around the predicted class
+        const probs = [0, 0, 0, 0, 0];
+        const remaining = 1 - net.confidence;
+        probs[net.strength_class] = net.confidence;
+        for (let c = 0; c <= 4; c++) {
+          if (c !== net.strength_class) {
+            probs[c] = remaining / 4;
+          }
+        }
+
+        html += `<tr><td class="p-2 rounded-md font-medium truncate max-w-[120px]" style="background:rgba(255,255,255,0.02);color:#e8ecf1;">${net.ssid}</td>`;
+        probs.forEach((p, c) => {
+          const opacity = 0.1 + p * 0.9;
+          const isBest = c === net.strength_class;
+          html += `<td class="p-2 rounded-md text-center" style="background:${classColors[c]}${Math.round(opacity * 30).toString(16).padStart(2, '0')};color:${isBest ? classColors[c] : '#5a6a80'};${isBest ? 'font-weight:700;' : ''}">${(p * 100).toFixed(1)}%</td>`;
+        });
+        html += `<td class="p-2 rounded-md text-center font-bold" style="background:${classColors[net.strength_class]}18;color:${classColors[net.strength_class]};">C${net.strength_class}</td></tr>`;
+      });
+
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+
+    // ===== HISTORY =====
+    function addToHistory(data) {
+      scanHistory.unshift({
+        timestamp: new Date().toLocaleString(),
+        count: data.networks.length,
+        best: [...data.networks].sort((a, b) => b.strength_class - a.strength_class || b.confidence - a.confidence)[0]?.ssid || '—',
+        avgConf: (data.networks.reduce((s, n) => s + n.confidence, 0) / data.networks.length * 100).toFixed(1)
+      });
+      if (scanHistory.length > 20) scanHistory.pop();
+      renderHistory();
+    }
+
+    function renderHistory() {
+      const container = document.getElementById('history-list');
+      if (!scanHistory.length) {
+        container.innerHTML = '<div class="flex flex-col items-center justify-center py-12" style="color:#3a4a60;"><i data-lucide="clock" style="width:40px;height:40px;margin-bottom:12px;opacity:0.4;"></i><p class="text-sm">No scan history yet</p></div>';
+        lucide.createIcons();
+        return;
+      }
+
+      container.innerHTML = scanHistory.map((entry, i) => `
+        <div class="flex items-center justify-between p-3 rounded-lg mb-2" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);">
+          <div class="flex items-center gap-3">
+            <span class="text-xs mono w-6 text-center font-bold" style="color:#5a6a80;">${i + 1}</span>
+            <div>
+              <p class="text-sm font-medium" style="color:#e8ecf1;">${entry.count} networks — Best: ${entry.best}</p>
+              <p class="text-xs mono" style="color:#5a6a80;">${entry.timestamp}</p>
+            </div>
+          </div>
+          <span class="text-xs mono px-2 py-1 rounded-md" style="background:rgba(56,239,125,0.1);color:#38ef7d;">${entry.avgConf}% avg</span>
+        </div>
+      `).join('');
+      lucide.createIcons();
+    }
+
+    function clearHistory() {
+      scanHistory = [];
+      renderHistory();
+      showToast('History cleared', 'success');
+    }
+
+    // ===== TOAST =====
+    function showToast(msg, type) {
+      const existing = document.querySelector('.toast-msg');
+      if (existing) existing.remove();
+
+      const toast = document.createElement('div');
+      toast.className = 'toast-msg';
+      const bg = type === 'error' ? 'rgba(239,68,68,0.9)' : 'rgba(17,153,142,0.9)';
+      toast.style.background = bg;
+      toast.style.color = '#fff';
+      toast.style.fontSize = '13px';
+      toast.style.fontFamily = "'DM Sans', sans-serif";
+      toast.style.fontWeight = '500';
+      toast.style.backdropFilter = 'blur(8px)';
+      toast.textContent = msg;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    }
+
+    // ===== INIT =====
+    lucide.createIcons();
+  </script>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9dc18f1e35443984',t:'MTc3MzQ3MzI4MC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
