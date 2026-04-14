@@ -8,19 +8,12 @@ from ping3 import ping
 
 app = Flask(__name__)
 
-# -----------------------------
-# LOAD ML MODELS
-# -----------------------------
 lg = joblib.load("lg_model.pkl")
 svm = joblib.load("svm_model.pkl")
 rf = joblib.load("rf_model.pkl")
 xg = joblib.load("xg_model.pkl")
 scaler = joblib.load("scaler.pkl")
 
-
-# -----------------------------
-# WIFI FUNCTIONS
-# -----------------------------
 
 def get_saved_networks():
 
@@ -134,9 +127,6 @@ def get_speed():
     return download, upload
 
 
-# -----------------------------
-# GET API
-# -----------------------------
 @app.route("/scan", methods=["GET"])
 
 def scan():
@@ -176,9 +166,7 @@ def scan():
     return jsonify({"networks": networks_data})
 
 
-# -----------------------------
-# POST API (ML Prediction)
-# -----------------------------
+
 @app.route("/predict", methods=["POST"])
 
 def predict():
